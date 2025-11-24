@@ -1,8 +1,10 @@
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 
 function ImageUploader({ onImageUpload }) {
-  const handleFileChange = useCallback((event) => {
-    const file = event.target.files?.[0]
+  const [isDragging, setIsDragging] = useState(false)
+
+  // Process a file (used by both file input and drag-and-drop)
+  const processFile = useCallback((file) => {
     if (!file) return
 
     // Validate file type
@@ -25,20 +27,73 @@ function ImageUploader({ onImageUpload }) {
           height: img.height
         })
       }
+      img.onerror = () => {
+        alert('Failed to load image. Please try another file.')
+      }
       img.src = e.target.result
+    }
+    reader.onerror = () => {
+      alert('Failed to read file. Please try another file.')
     }
     reader.readAsDataURL(file)
   }, [onImageUpload])
 
+  const handleFileChange = useCallback((event) => {
+    const file = event.target.files?.[0]
+    processFile(file)
+  }, [processFile])
+
+  // Drag and drop handlers
+  const handleDragEnter = useCallback((e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+  }, [])
+
+  const handleDragOver = useCallback((e) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }, [])
+
+  const handleDrop = useCallback((e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+
+    const files = e.dataTransfer.files
+    if (files && files.length > 0) {
+      const file = files[0]
+      processFile(file)
+    }
+  }, [processFile])
+
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold text-white">Image Upload</h2>
+      <h2 className="text-sm font-semibold text-gray-200 uppercase tracking-wider">Image Upload</h2>
       
       <label className="block">
-        <div className="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center cursor-pointer hover:border-gray-500 transition-colors">
+        <div
+          className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all duration-200 ${
+            isDragging
+              ? 'border-blue-500 bg-blue-500/10'
+              : 'border-gray-600 hover:border-blue-500 hover:bg-gray-750 bg-gray-750/30'
+          }`}
+          onDragEnter={handleDragEnter}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
           <div className="space-y-2">
             <svg
-              className="mx-auto h-12 w-12 text-gray-400"
+              className={`mx-auto h-12 w-12 transition-colors ${
+                isDragging ? 'text-blue-400' : 'text-gray-400 group-hover:text-blue-400'
+              }`}
               stroke="currentColor"
               fill="none"
               viewBox="0 0 48 48"
@@ -50,11 +105,11 @@ function ImageUploader({ onImageUpload }) {
                 strokeLinejoin="round"
               />
             </svg>
-            <p className="text-sm text-gray-300">
+            <p className="text-sm text-gray-300 font-medium">
               Click to upload or drag and drop
             </p>
-            <p className="text-xs text-gray-400">
-              JPEG or PNG (max file size)
+            <p className="text-xs text-gray-500">
+              JPEG or PNG
             </p>
           </div>
         </div>

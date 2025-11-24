@@ -1,32 +1,38 @@
 import { useState } from 'react'
-import Sidebar from './components/Sidebar'
-import CanvasDisplay from './components/CanvasDisplay'
+import ImagePrep from './components/ImagePrep'
+import SymmetryStudio from './components/SymmetryStudio'
 
 function App() {
-  // Store the original high-resolution image data
-  const [originalImage, setOriginalImage] = useState(null)
+  // Workflow step: 1 for 'Prep', 2 for 'Studio'
+  const [workflowStep, setWorkflowStep] = useState(1)
   
-  // Midpoint in normalized coordinates (0 to 1)
-  // Initially set to geometric center
-  const [midpoint, setMidpoint] = useState({ x: 0.5, y: 0.5 })
+  // Store the final processed image data passed from Stage 1 to Stage 2
+  const [sourceImage, setSourceImage] = useState(null)
 
-  const handleImageUpload = (imageFile) => {
-    setOriginalImage(imageFile)
-    // Reset midpoint to center when new image is uploaded
-    setMidpoint({ x: 0.5, y: 0.5 })
+  // Handle confirmation from ImagePrep - move to Stage 2
+  const handleImageConfirm = (processedImageBlob) => {
+    setSourceImage(processedImageBlob)
+    setWorkflowStep(2)
   }
 
-  return (
-    <div className="flex h-screen w-screen bg-gray-900 text-gray-100">
-      <Sidebar 
-        onImageUpload={handleImageUpload}
-        originalImage={originalImage}
-        midpoint={midpoint}
-        onMidpointChange={setMidpoint}
-      />
-      <CanvasDisplay originalImage={originalImage} />
-    </div>
-  )
+  // Handle back button - return to Stage 1
+  const handleBack = () => {
+    setWorkflowStep(1)
+    // Optionally clear sourceImage when going back
+    // setSourceImage(null)
+  }
+
+  // Conditional rendering based on workflow step
+  if (workflowStep === 1) {
+    return <ImagePrep onConfirm={handleImageConfirm} />
+  }
+
+  if (workflowStep === 2) {
+    return <SymmetryStudio sourceImage={sourceImage} onBack={handleBack} />
+  }
+
+  // Fallback (should not reach here)
+  return null
 }
 
 export default App

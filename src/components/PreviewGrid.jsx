@@ -1,7 +1,7 @@
 import { useEffect, useRef, useMemo } from 'react'
 import { generateSymmetries } from '../utils/generateSymmetries'
 
-function PreviewGrid({ originalImage, midpoint }) {
+function PreviewGrid({ originalImage, midpoint, rotation, zoom, activePreviewIndex, onActivePreviewChange }) {
   const canvasRef1 = useRef(null)
   const canvasRef2 = useRef(null)
   const canvasRef3 = useRef(null)
@@ -9,11 +9,12 @@ function PreviewGrid({ originalImage, midpoint }) {
   
   const canvasRefs = useMemo(() => [canvasRef1, canvasRef2, canvasRef3, canvasRef4], [])
 
-  // Generate symmetrical patterns when image or midpoint changes
+  // Generate symmetrical patterns when image, midpoint, rotation, or zoom changes
+  // Use 'preview' quality (max 1024px) for fast rendering
   const symmetricalPatterns = useMemo(() => {
     if (!originalImage || !midpoint) return []
-    return generateSymmetries(originalImage.imageElement, midpoint)
-  }, [originalImage, midpoint])
+    return generateSymmetries(originalImage.imageElement, midpoint, rotation, zoom, 'preview')
+  }, [originalImage, midpoint, rotation, zoom])
 
   // Render each pattern to its corresponding canvas
   useEffect(() => {
@@ -56,21 +57,41 @@ function PreviewGrid({ originalImage, midpoint }) {
   const quadrantLabels = ['Top-Left', 'Top-Right', 'Bottom-Left', 'Bottom-Right']
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-semibold text-white">Symmetry Previews</h2>
-      <div className="grid grid-cols-2 gap-4">
-        {canvasRefs.map((canvasRef, index) => (
-          <div key={index} className="space-y-2">
-            <canvas
-              ref={canvasRef}
-              className="w-full border border-gray-600 rounded bg-gray-700"
-              style={{ aspectRatio: '1 / 1' }}
-            />
-            <p className="text-xs text-gray-400 text-center">
-              {quadrantLabels[index]}
-            </p>
-          </div>
-        ))}
+    <div className="space-y-4 pt-2 border-t border-gray-700">
+      <h2 className="text-sm font-semibold text-gray-200 uppercase tracking-wider">Symmetry Previews</h2>
+      <div className="grid grid-cols-2 gap-3">
+        {canvasRefs.map((canvasRef, index) => {
+          const isActive = activePreviewIndex === index
+          return (
+            <div 
+              key={index} 
+              className="space-y-2 cursor-pointer group"
+              onClick={() => onActivePreviewChange(index)}
+            >
+              <div className="relative">
+                <canvas
+                  ref={canvasRef}
+                  className={`w-full border-2 rounded-lg bg-gray-700 transition-all shadow-md ${
+                    isActive 
+                      ? 'border-blue-500 ring-2 ring-blue-500 ring-opacity-50 shadow-blue-500/20' 
+                      : 'border-gray-600 group-hover:border-gray-500 group-hover:shadow-lg'
+                  }`}
+                  style={{ aspectRatio: '1 / 1' }}
+                />
+                {isActive && (
+                  <div className="absolute top-2 right-2 bg-blue-500 text-white text-xs px-2 py-1 rounded-md font-medium shadow-lg">
+                    Active
+                  </div>
+                )}
+              </div>
+              <p className={`text-xs text-center transition-colors font-medium ${
+                isActive ? 'text-blue-400' : 'text-gray-400'
+              }`}>
+                {quadrantLabels[index]}
+              </p>
+            </div>
+          )
+        })}
       </div>
     </div>
   )

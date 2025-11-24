@@ -4,151 +4,250 @@
  * 
  * @param {HTMLImageElement} imageElement - The source image element
  * @param {Object} midpoint - Normalized coordinates { x: 0-1, y: 0-1 }
+ * @param {number} rotation - Rotation in degrees (-180 to 180)
+ * @param {number} zoom - Zoom factor (1.0 = no zoom, >1.0 = zoom in/crop)
+ * @param {string} quality - 'preview' (max 1024px) or 'high-res' (full resolution)
  * @returns {Array<ImageData>} Array of 4 ImageData objects representing the symmetrical patterns
  */
-export function generateSymmetries(imageElement, midpoint) {
+export function generateSymmetries(imageElement, midpoint, rotation = 0, zoom = 1.0, quality = 'preview') {
   if (!imageElement || !midpoint) return []
 
-  const imgWidth = imageElement.width
-  const imgHeight = imageElement.height
+  const originalWidth = imageElement.width
+  const originalHeight = imageElement.height
+
+  // For preview quality, scale down to max 1024px while maintaining aspect ratio
+  let imgWidth, imgHeight, scaleFactor = 1.0
+  
+  if (quality === 'preview') {
+    const maxDimension = 1024
+    if (originalWidth > maxDimension || originalHeight > maxDimension) {
+      if (originalWidth > originalHeight) {
+        scaleFactor = maxDimension / originalWidth
+      } else {
+        scaleFactor = maxDimension / originalHeight
+      }
+      imgWidth = Math.round(originalWidth * scaleFactor)
+      imgHeight = Math.round(originalHeight * scaleFactor)
+    } else {
+      imgWidth = originalWidth
+      imgHeight = originalHeight
+    }
+  } else {
+    // High-res: use full resolution
+    imgWidth = originalWidth
+    imgHeight = originalHeight
+  }
+
+  // Create a preprocessed canvas with rotation and zoom applied
+  const preprocessedCanvas = document.createElement('canvas')
+  preprocessedCanvas.width = imgWidth
+  preprocessedCanvas.height = imgHeight
+  const preprocessedCtx = preprocessedCanvas.getContext('2d')
+
+  // Fill background
+  preprocessedCtx.fillStyle = '#1f2937'
+  preprocessedCtx.fillRect(0, 0, imgWidth, imgHeight)
+
+  // Apply transformations
+  preprocessedCtx.save()
+  
+  // Move to center for rotation and zoom
+  const centerX = imgWidth / 2
+  const centerY = imgHeight / 2
+  preprocessedCtx.translate(centerX, centerY)
+
+  // Apply rotation
+  preprocessedCtx.rotate((rotation * Math.PI) / 180)
+
+  // Apply zoom (scale around center)
+  preprocessedCtx.scale(zoom, zoom)
+
+  // Draw image centered (scaled if preview quality)
+  if (quality === 'preview' && scaleFactor < 1.0) {
+    // Draw scaled down image
+    preprocessedCtx.drawImage(
+      imageElement,
+      -imgWidth / 2,
+      -imgHeight / 2,
+      imgWidth,
+      imgHeight
+    )
+  } else {
+    // Draw full resolution image
+    preprocessedCtx.drawImage(
+      imageElement,
+      -imgWidth / 2,
+      -imgHeight / 2,
+      imgWidth,
+      imgHeight
+    )
+  }
+
+  preprocessedCtx.restore()
 
   // Convert normalized coordinates to pixel coordinates
   const midX = midpoint.x * imgWidth
   const midY = midpoint.y * imgHeight
 
-  // Create a temporary canvas to work with the original image
-  const tempCanvas = document.createElement('canvas')
-  tempCanvas.width = imgWidth
-  tempCanvas.height = imgHeight
-  const tempCtx = tempCanvas.getContext('2d')
-  tempCtx.drawImage(imageElement, 0, 0)
-
-  // Get the source image data
-  const sourceImageData = tempCtx.getImageData(0, 0, imgWidth, imgHeight)
-
-  // Define quadrants based on midpoint
-  const quadrants = [
+  // Define the 4 source rectangles based on the midpoint
+  const sourceRectangles = [
     {
       name: 'topLeft',
-      sourceX: 0,
-      sourceY: 0,
-      sourceWidth: midX,
-      sourceHeight: midY
+      // TL Source: (0, 0) to (midX, midY)
+      x: 0,
+      y: 0,
+      width: midX,
+      height: midY
     },
     {
       name: 'topRight',
-      sourceX: midX,
-      sourceY: 0,
-      sourceWidth: imgWidth - midX,
-      sourceHeight: midY
+      // TR Source: (midX, 0) to (width, midY)
+      x: midX,
+      y: 0,
+      width: imgWidth - midX,
+      height: midY
     },
     {
       name: 'bottomLeft',
-      sourceX: 0,
-      sourceY: midY,
-      sourceWidth: midX,
-      sourceHeight: imgHeight - midY
+      // BL Source: (0, midY) to (midX, height)
+      x: 0,
+      y: midY,
+      width: midX,
+      height: imgHeight - midY
     },
     {
       name: 'bottomRight',
-      sourceX: midX,
-      sourceY: midY,
-      sourceWidth: imgWidth - midX,
-      sourceHeight: imgHeight - midY
+      // BR Source: (midX, midY) to (width, height)
+      x: midX,
+      y: midY,
+      width: imgWidth - midX,
+      height: imgHeight - midY
     }
   ]
 
-  // Generate symmetrical pattern for each quadrant
-  return quadrants.map(quadrant => {
-    return createSymmetricalPattern(
-      sourceImageData,
+  // Process each source rectangle to create a full kaleidoscopic pattern
+  return sourceRectangles.map((sourceRect, index) => {
+    return createPatternFromSource(
+      preprocessedCanvas,
+      sourceRect,
       imgWidth,
       imgHeight,
-      quadrant
+      index
     )
   })
 }
 
 /**
- * Creates a full symmetrical pattern by mirroring a quadrant.
- * The quadrant is mirrored both horizontally and vertically to fill all 4 quadrants.
+ * Creates a full symmetrical pattern from a source rectangle.
  * 
- * @param {ImageData} sourceImageData - The full source image data
- * @param {number} imgWidth - Original image width
- * @param {number} imgHeight - Original image height
- * @param {Object} quadrant - Quadrant definition with source coordinates and dimensions
+ * @param {HTMLCanvasElement} sourceCanvas - The preprocessed source canvas
+ * @param {Object} sourceRect - Source rectangle { x, y, width, height, name }
+ * @param {number} imgWidth - Full image width
+ * @param {number} imgHeight - Full image height
+ * @param {number} sourceIndex - Index of the source (0=TL, 1=TR, 2=BL, 3=BR)
  * @returns {ImageData} Complete symmetrical pattern
  */
-function createSymmetricalPattern(sourceImageData, imgWidth, imgHeight, quadrant) {
-  // Create a source canvas with the full image
-  const sourceCanvas = document.createElement('canvas')
-  sourceCanvas.width = imgWidth
-  sourceCanvas.height = imgHeight
-  const sourceCtx = sourceCanvas.getContext('2d')
-  sourceCtx.putImageData(sourceImageData, 0, 0)
-
-  // Extract the source quadrant to a separate canvas
-  const quadrantCanvas = document.createElement('canvas')
-  quadrantCanvas.width = quadrant.sourceWidth
-  quadrantCanvas.height = quadrant.sourceHeight
-  const quadrantCtx = quadrantCanvas.getContext('2d')
+function createPatternFromSource(sourceCanvas, sourceRect, imgWidth, imgHeight, sourceIndex) {
+  // Step 1: Extract the source quadrant to a temporary canvas
+  const tempCanvas = document.createElement('canvas')
+  tempCanvas.width = sourceRect.width
+  tempCanvas.height = sourceRect.height
+  const tempCtx = tempCanvas.getContext('2d')
   
   // Draw the quadrant region from the source
-  quadrantCtx.drawImage(
+  tempCtx.drawImage(
     sourceCanvas,
-    quadrant.sourceX,
-    quadrant.sourceY,
-    quadrant.sourceWidth,
-    quadrant.sourceHeight,
+    sourceRect.x,
+    sourceRect.y,
+    sourceRect.width,
+    sourceRect.height,
     0,
     0,
-    quadrant.sourceWidth,
-    quadrant.sourceHeight
+    sourceRect.width,
+    sourceRect.height
   )
 
-  // Create output canvas for the full symmetrical pattern
-  const outputCanvas = document.createElement('canvas')
-  outputCanvas.width = imgWidth
-  outputCanvas.height = imgHeight
-  const outputCtx = outputCanvas.getContext('2d')
+  // Step 2: Flip the source to act like a Top-Left tile before applying mirroring
+  // TR: flip horizontally, BL: flip vertically, BR: flip both, TL: use as-is
+  let sourceTileCanvas = tempCanvas // Default: use as-is for TL
+  
+  if (sourceIndex === 1) { // Top-Right source - flip horizontally
+    const flippedCanvas = document.createElement('canvas')
+    flippedCanvas.width = sourceRect.width
+    flippedCanvas.height = sourceRect.height
+    const flippedCtx = flippedCanvas.getContext('2d')
+    
+    flippedCtx.save()
+    flippedCtx.translate(sourceRect.width, 0)
+    flippedCtx.scale(-1, 1)
+    flippedCtx.drawImage(tempCanvas, 0, 0)
+    flippedCtx.restore()
+    
+    sourceTileCanvas = flippedCanvas
+  } else if (sourceIndex === 2) { // Bottom-Left source - flip vertically
+    const flippedCanvas = document.createElement('canvas')
+    flippedCanvas.width = sourceRect.width
+    flippedCanvas.height = sourceRect.height
+    const flippedCtx = flippedCanvas.getContext('2d')
+    
+    flippedCtx.save()
+    flippedCtx.translate(0, sourceRect.height)
+    flippedCtx.scale(1, -1)
+    flippedCtx.drawImage(tempCanvas, 0, 0)
+    flippedCtx.restore()
+    
+    sourceTileCanvas = flippedCanvas
+  } else if (sourceIndex === 3) { // Bottom-Right source - flip both horizontally and vertically
+    const flippedCanvas = document.createElement('canvas')
+    flippedCanvas.width = sourceRect.width
+    flippedCanvas.height = sourceRect.height
+    const flippedCtx = flippedCanvas.getContext('2d')
+    
+    flippedCtx.save()
+    flippedCtx.translate(sourceRect.width, sourceRect.height)
+    flippedCtx.scale(-1, -1)
+    flippedCtx.drawImage(tempCanvas, 0, 0)
+    flippedCtx.restore()
+    
+    sourceTileCanvas = flippedCanvas
+  }
+  // sourceIndex === 0 (Top-Left) uses tempCanvas as-is, no flipping needed
+
+  // Step 3: Create Pattern Canvas (full size of original image)
+  const patternCanvas = document.createElement('canvas')
+  patternCanvas.width = imgWidth
+  patternCanvas.height = imgHeight
+  const patternCtx = patternCanvas.getContext('2d')
 
   // Fill background
-  outputCtx.fillStyle = '#1f2937'
-  outputCtx.fillRect(0, 0, imgWidth, imgHeight)
+  patternCtx.fillStyle = '#1f2937'
+  patternCtx.fillRect(0, 0, imgWidth, imgHeight)
 
-  // Place quadrant in its original position
-  outputCtx.drawImage(quadrantCanvas, quadrant.sourceX, quadrant.sourceY)
+  // Step 4: Fill the Pattern Canvas using the mirroring logic
+  // Top-Left Quadrant: Draw source at (0,0)
+  patternCtx.drawImage(sourceTileCanvas, 0, 0)
 
-  // Mirror horizontally (flip on Y-axis) - creates the opposite horizontal quadrant
-  outputCtx.save()
-  outputCtx.scale(-1, 1)
-  outputCtx.drawImage(
-    quadrantCanvas,
-    -quadrant.sourceX - quadrant.sourceWidth,
-    quadrant.sourceY
-  )
-  outputCtx.restore()
+  // Top-Right Quadrant: save(), translate(width, 0), scale(-1, 1), draw source at (0,0), restore()
+  patternCtx.save()
+  patternCtx.translate(imgWidth, 0)
+  patternCtx.scale(-1, 1)
+  patternCtx.drawImage(sourceTileCanvas, 0, 0)
+  patternCtx.restore()
 
-  // Mirror vertically (flip on X-axis) - creates the opposite vertical quadrant
-  outputCtx.save()
-  outputCtx.scale(1, -1)
-  outputCtx.drawImage(
-    quadrantCanvas,
-    quadrant.sourceX,
-    -quadrant.sourceY - quadrant.sourceHeight
-  )
-  outputCtx.restore()
+  // Bottom-Left Quadrant: save(), translate(0, height), scale(1, -1), draw source at (0,0), restore()
+  patternCtx.save()
+  patternCtx.translate(0, imgHeight)
+  patternCtx.scale(1, -1)
+  patternCtx.drawImage(sourceTileCanvas, 0, 0)
+  patternCtx.restore()
 
-  // Mirror both (flip on both axes) - creates the diagonal opposite quadrant
-  outputCtx.save()
-  outputCtx.scale(-1, -1)
-  outputCtx.drawImage(
-    quadrantCanvas,
-    -quadrant.sourceX - quadrant.sourceWidth,
-    -quadrant.sourceY - quadrant.sourceHeight
-  )
-  outputCtx.restore()
+  // Bottom-Right Quadrant: save(), translate(width, height), scale(-1, -1), draw source at (0,0), restore()
+  patternCtx.save()
+  patternCtx.translate(imgWidth, imgHeight)
+  patternCtx.scale(-1, -1)
+  patternCtx.drawImage(sourceTileCanvas, 0, 0)
+  patternCtx.restore()
 
-  return outputCtx.getImageData(0, 0, imgWidth, imgHeight)
+  return patternCtx.getImageData(0, 0, imgWidth, imgHeight)
 }
 
